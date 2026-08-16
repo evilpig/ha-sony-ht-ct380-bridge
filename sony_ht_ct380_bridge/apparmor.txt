@@ -1,0 +1,40 @@
+#include <tunables/global>
+
+profile sony_ht_ct380_bridge flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+
+  capability net_admin,
+  capability net_raw,
+
+  /init rix,
+  /package/** rix,
+  /command/** rix,
+  /run/{s6,s6-rc*,service}/** rwix,
+  /run/** rwk,
+  /etc/s6-overlay/** rix,
+  /etc/cont-init.d/** rwix,
+  /bin/** ix,
+  /usr/bin/** ix,
+  /usr/lib/** r,
+  /lib/** r,
+  /run.sh rix,
+  /probe.py r,
+  /bridge.py r,
+  /data/** rwk,
+  /data/ r,
+  /run/dbus/system_bus_socket rw,
+  /sys/class/bluetooth/** r,
+  /sys/devices/**/bluetooth/** r,
+
+  dbus send bus=system,
+  dbus receive bus=system,
+
+  network unix stream,
+  network unix dgram,
+  network bluetooth,
+  network inet stream,
+  network inet dgram,
+  network inet6 stream,
+  network inet6 dgram,
+}
+

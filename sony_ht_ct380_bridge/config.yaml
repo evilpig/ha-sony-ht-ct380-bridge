@@ -1,0 +1,27 @@
+name: "Sony HT-CT380 Bridge"
+version: "0.5.15"
+slug: "sony_ht_ct380_bridge"
+description: "Experimental Bluetooth control bridge for the Sony HT-CT380"
+url: "https://github.com/evilpig/ha-sony-ht-ct380-bridge"
+arch:
+  - amd64
+  - aarch64
+init: false
+startup: services
+boot: auto
+host_dbus: true
+homeassistant_api: true
+services:
+  - mqtt:need
+privileged:
+  - NET_ADMIN
+  - NET_RAW
+apparmor: true
+options:
+  device_mac: "AA:BB:CC:DD:EE:FF"
+  mqtt_host: "core-mosquitto"
+  mqtt_port: 1883
+schema:
+  device_mac: "match(^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$)"
+  mqtt_host: str
+  mqtt_port: port

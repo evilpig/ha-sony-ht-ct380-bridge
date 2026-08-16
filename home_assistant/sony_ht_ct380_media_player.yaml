@@ -1,0 +1,46 @@
+# Optional Home Assistant package for a single media_player entity backed by
+# the MQTT entities discovered by the Sony HT-CT380 Bridge add-on.
+media_player:
+  - platform: universal
+    name: Sony HT-CT380
+    unique_id: sony_ht_ct380_media_player
+    device_class: receiver
+    state_template: >-
+      {{ 'on' if is_state('binary_sensor.sony_ht_ct380_control_connection', 'on') else 'off' }}
+    commands:
+      volume_set:
+        action: number.set_value
+        target:
+          entity_id: number.sony_ht_ct380_volume
+        data:
+          value: "{{ (volume_level * 50) | round(0) | int }}"
+      volume_up:
+        action: number.set_value
+        target:
+          entity_id: number.sony_ht_ct380_volume
+        data:
+          value: "{{ [states('number.sony_ht_ct380_volume') | int(0) + 1, 50] | min }}"
+      volume_down:
+        action: number.set_value
+        target:
+          entity_id: number.sony_ht_ct380_volume
+        data:
+          value: "{{ [states('number.sony_ht_ct380_volume') | int(0) - 1, 0] | max }}"
+      select_source:
+        action: select.select_option
+        target:
+          entity_id: select.sony_ht_ct380_input
+        data:
+          option: "{{ source }}"
+      select_sound_mode:
+        action: select.select_option
+        target:
+          entity_id: select.sony_ht_ct380_sound_mode
+        data:
+          option: "{{ sound_mode }}"
+    attributes:
+      volume_level: sensor.sony_ht_ct380_normalized_volume
+      source: select.sony_ht_ct380_input
+      source_list: select.sony_ht_ct380_input|options
+      sound_mode: select.sony_ht_ct380_sound_mode
+      sound_mode_list: select.sony_ht_ct380_sound_mode|options
