@@ -1,0 +1,1 @@
+# ha-sony-ht-ct380-bridge
