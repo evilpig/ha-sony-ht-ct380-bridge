@@ -1,5 +1,5 @@
 name: "Sony HT-CT380 Bridge"
-version: "0.5.16"
+version: "0.5.18"
 slug: "sony_ht_ct380_bridge"
 description: "Experimental Bluetooth control bridge for the Sony HT-CT380"
 url: "https://github.com/evilpig/ha-sony-ht-ct380-bridge"
@@ -21,8 +21,10 @@ options:
   device_mac: "AA:BB:CC:DD:EE:FF"
   mqtt_host: "core-mosquitto"
   mqtt_port: 1883
+  tv_entity_id: ""
 schema:
   device_mac: "match(^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$)"
   mqtt_host: str
   mqtt_port: port
+  tv_entity_id: str
 

@@ -13,7 +13,7 @@ Only the Sony HT-CT380 with firmware 2.033 is officially tested. Similar SongPal
 3. Pass a Bluetooth Classic-capable local adapter to HAOS.
 4. Stop this bridge while pairing.
 5. Pair and connect the soundbar in Bluetooth Audio Manager.
-6. Configure the soundbar MAC and MQTT broker in this app.
+6. Configure the soundbar MAC and MQTT broker in this app. Optionally set `tv_entity_id` to a reliable TV power entity; leave it blank to disable TV awareness.
 7. Add the required `rest_command.bt_audio_connect` and `rest_command.bt_audio_disconnect` services described in the repository README.
 8. Start the bridge.
 
@@ -23,7 +23,7 @@ The soundbar can be temperamental. Manual unpairing and re-pairing through Bluet
 
 ## Runtime
 
-The bridge publishes MQTT Discovery entities for volume, subwoofer, Night Mode, sound mode, inputs, control status, recovery, and manual reconnect. A read-only status heartbeat runs every 10 seconds. Recovery is bounded and stops with a warning after two failed cycles.
+The bridge publishes MQTT Discovery entities for volume, subwoofer, Night Mode, sound mode, inputs, control status, recovery, manual reconnect, and optional TV power. A read-only status heartbeat runs every 10 seconds. Recovery is bounded and stops with a warning after two failed cycles. With `tv_entity_id` configured, automatic recovery pauses while the TV is off and synchronizes after a 15-second TV-on routing delay.
 
 For the tested HT-CT380 setup, enable Bluetooth Audio Manager **Stay Awake** and set **Reconnect Interval** to **10 seconds** instead of 30 seconds to reduce recovery delays.
 

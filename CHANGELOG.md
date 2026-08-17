@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.18 - 2026-08-16
+
+- Add optional configurable `tv_entity_id` and MQTT TV Power discovery entity
+- Suppress automatic recovery while the TV is off without disabling healthy or manual soundbar control
+- Refresh Sony state and activation 15 seconds after TV power-on
+- Serialize TV, automatic, and manual reconnect requests to prevent overlapping recovery cycles
+- Activate a newly established Sony session using an acknowledged unchanged-volume write
+
 ## 0.5.16 - 2026-08-16
 
 - Publish subwoofer state only after a successful Sony transport acknowledgement
