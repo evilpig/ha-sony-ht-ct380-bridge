@@ -1,10 +1,11 @@
 name: "Sony HT-CT380 Bridge"
 version: "0.5.16"
 slug: "sony_ht_ct380_bridge"
-description: "Local Bluetooth control bridge for the Sony HT-CT380"
-url: "https://github.com/openai/codex"
+description: "Experimental Bluetooth control bridge for the Sony HT-CT380"
+url: "https://github.com/evilpig/ha-sony-ht-ct380-bridge"
 arch:
   - amd64
+  - aarch64
 init: false
 startup: services
 boot: auto
@@ -24,3 +25,4 @@ schema:
   device_mac: "match(^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$)"
   mqtt_host: str
   mqtt_port: port
+
