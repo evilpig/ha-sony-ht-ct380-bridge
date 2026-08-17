@@ -22,6 +22,7 @@ This project was developed with assistance from OpenAI ChatGPT and Codex. The ha
 - Optional Universal Media Player package
 - Read-only control heartbeat
 - Bounded automatic recovery and a manual Reconnect Control button
+- Optional TV-power-aware recovery and MQTT TV Power status
 
 ## Requirements
 
@@ -38,7 +39,7 @@ An ESPHome Bluetooth proxy is not a substitute: this protocol uses Bluetooth Cla
 2. Add `https://github.com/evilpig/ha-sony-ht-ct380-bridge`.
 3. Install **Sony HT-CT380 Bridge**.
 4. Leave the bridge stopped while pairing the soundbar in Bluetooth Audio Manager.
-5. Configure your soundbar MAC address and MQTT broker in the bridge options.
+5. Configure your soundbar MAC address and MQTT broker in the bridge options. Optionally set `tv_entity_id` to a reliable TV power entity such as `remote.living_room_tv`.
 6. Add the REST commands below, restart Home Assistant, then start the bridge.
 
 Example configuration, replacing the hostname if your Bluetooth Audio Manager installation uses a different slug:
@@ -71,6 +72,7 @@ The HT-CT380 can be temperamental during pairing:
 - Manual unpairing and re-pairing in Bluetooth Audio Manager may be necessary.
 - If control becomes stale, the bridge performs at most two disconnect/wait/connect recovery cycles and then publishes a diagnostic warning instead of retrying forever.
 - The manual **Reconnect Control** button performs the same controlled reset.
+- Optional `tv_entity_id` behavior: leave it blank to disable TV awareness. When configured, TV-off suppresses automatic recovery while preserving a healthy control link and manual controls. TV-on waits 15 seconds for HDMI-CEC/audio routing, then refreshes state or requests one serialized, bounded reconnect.
 
 Bluetooth Audio Manager's **Stay Awake** option can help keep the A2DP connection alive, but it does not keep the proprietary Sony control session alive by itself. The bridge independently checks that session using a read-only volume query.
 

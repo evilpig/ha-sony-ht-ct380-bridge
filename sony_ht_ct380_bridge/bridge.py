@@ -56,9 +56,9 @@ class Profile(ServiceInterface):
  @method()
  def RequestDisconnection(self,device:"o")->None:L.info("Disconnect requested: %s",device)
 class Bridge:
- def __init__(self,loop,mac):
-  self.loop=loop;self.mac=mac;self.session=None;self.handshake_started=None;self.states={};self.reconnect_control=None;self.device_connected=None
-  self.recovery_attempts=0;self.recovery_next=0;self.recovery_warned=False;self.missing_since=None
+ def __init__(self,loop,mac,tv_entity_id=""):
+  self.loop=loop;self.mac=mac;self.tv_entity_id=tv_entity_id;self.tv_is_on=None;self.session=None;self.handshake_started=None;self.states={};self.reconnect_control=None;self.device_connected=None
+  self.recovery_attempts=0;self.recovery_next=0;self.recovery_warned=False;self.missing_since=None;self.reconnect_task=None
   self.mq=mqtt.Client(mqtt.CallbackAPIVersion.VERSION2,client_id="sony_ht_ct380_bridge")
   if os.getenv("MQTT_USER"):self.mq.username_pw_set(os.getenv("MQTT_USER"),os.getenv("MQTT_PASSWORD",""))
   self.mq.will_set(AVAIL,"offline",1,True);self.mq.on_connect=self.connected;self.mq.on_connect_fail=self.connect_failed;self.mq.on_disconnect=self.disconnected;self.mq.on_message=self.message
@@ -78,7 +78,7 @@ class Bridge:
   if reason!=0:L.warning("MQTT disconnected: %s",reason)
  def discover(self):
   dev={"identifiers":["sony_ht_ct380_tandem"],"name":"Sony HT-CT380","manufacturer":"Sony","model":"HT-CT380","sw_version":"2.033","connections":[["mac",self.mac]]}
-  common={"availability_topic":AVAIL,"payload_available":"online","payload_not_available":"offline","device":dev,"origin":{"name":"Sony HT-CT380 bridge","sw_version":"0.5.16"}}
+  common={"availability_topic":AVAIL,"payload_available":"online","payload_not_available":"offline","device":dev,"origin":{"name":"Sony HT-CT380 bridge","sw_version":"0.5.18"}}
   entities=[
    ("number","volume",{"name":"Volume","unique_id":"sony_ht_ct380_volume","command_topic":BASE+"/volume/set","state_topic":BASE+"/volume/state","min":0,"max":50,"step":1,"mode":"slider","icon":"mdi:volume-high"}),
    ("sensor","normalized_volume",{"name":"Normalized Volume","unique_id":"sony_ht_ct380_normalized_volume","state_topic":BASE+"/volume/state","value_template":"{{ value | float / 50 }}","entity_category":"diagnostic","icon":"mdi:volume-medium"}),
@@ -89,9 +89,10 @@ class Bridge:
    ("binary_sensor","connection",{"name":"Control Connection","unique_id":"sony_ht_ct380_connection","state_topic":BASE+"/connection/state","payload_on":"ON","payload_off":"OFF","device_class":"connectivity"}),
    ("binary_sensor","recovery_problem",{"name":"Control Recovery Problem","unique_id":"sony_ht_ct380_recovery_problem","state_topic":BASE+"/recovery_problem/state","payload_on":"ON","payload_off":"OFF","device_class":"problem","entity_category":"diagnostic"}),
    ("button","reconnect_control",{"name":"Reconnect Control","unique_id":"sony_ht_ct380_reconnect_control","command_topic":BASE+"/reconnect_control/set","payload_press":"PRESS","icon":"mdi:bluetooth-connect"})]
+  if self.tv_entity_id:entities.append(("binary_sensor","tv_power",{"name":"TV Power","unique_id":"sony_ht_ct380_tv_power","state_topic":BASE+"/tv_power/state","payload_on":"ON","payload_off":"OFF","device_class":"power","icon":"mdi:television"}))
   for domain,obj,cfg in entities:
    payload=dict(common);payload.update(cfg)
-   if domain=="button" or obj=="recovery_problem":
+   if domain=="button" or obj in ("recovery_problem","tv_power"):
     for key in ("availability_topic","payload_available","payload_not_available"):payload.pop(key,None)
    self.mq.publish("homeassistant/"+domain+"/"+BASE+"/"+obj+"/config",json.dumps(payload),1,True)
  def connected(self,client,user,flags,reason,properties):
@@ -125,6 +126,44 @@ class Bridge:
     with urllib.request.urlopen(req,timeout=10) as response:response.read()
    except (OSError,urllib.error.URLError) as exc:L.warning("Could not %s Home Assistant recovery notification: %s",service,exc)
   self.loop.run_in_executor(None,post)
+ async def request_reconnect(self,reason):
+  if not self.reconnect_control:return False
+  if self.reconnect_task and not self.reconnect_task.done():
+   L.info("Reconnect Control (%s): another reconnect is already running",reason)
+   return await asyncio.shield(self.reconnect_task)
+  self.reconnect_task=self.loop.create_task(self.reconnect_control(reason))
+  try:return await asyncio.shield(self.reconnect_task)
+  finally:self.reconnect_task=None
+ def read_tv_state(self):
+  token=os.getenv("SUPERVISOR_TOKEN","")
+  url=os.getenv("SUPERVISOR_API","http://172.30.32.2")+"/core/api/states/"+self.tv_entity_id
+  req=urllib.request.Request(url,headers={"Authorization":"Bearer "+token})
+  with urllib.request.urlopen(req,timeout=10) as response:return json.loads(response.read()).get("state")
+ async def tv_watchdog(self):
+  if not self.tv_entity_id:
+   L.info("TV-aware recovery is disabled");return
+  L.info("TV-aware recovery watching %s",self.tv_entity_id);previous=None;sync_due=None
+  while True:
+   try:
+    state=await asyncio.to_thread(self.read_tv_state)
+    current=True if state=="on" else False if state=="off" else None
+    if current is not None:
+     self.tv_is_on=current
+     if current!=previous:
+      self.state("tv_power","ON" if current else "OFF");L.info("TV power is %s","on" if current else "off")
+      sync_due=self.loop.time()+15 if current else None
+      if current:L.info("TV powered on; allowing 15 seconds for HDMI-CEC and audio routing")
+      previous=current
+    if sync_due and self.loop.time()>=sync_due:
+     sync_due=None
+     if self.tv_is_on:
+      if self.session and self.session.linked:
+       L.info("TV-on synchronization: refreshing Sony state and activation");self.session.activation_sent=False;await self.session.queries()
+      else:
+       L.info("TV-on synchronization: Sony control is offline; requesting bounded reconnect");await self.request_reconnect("TV powered on")
+   except (OSError,urllib.error.URLError,ValueError) as exc:
+    L.warning("Could not read TV state from %s: %s",self.tv_entity_id,exc);await asyncio.sleep(15);continue
+   await asyncio.sleep(5)
  async def recovery_watchdog(self):
   L.info("Automatic control recovery watchdog started");self.state("recovery_problem","OFF")
   while True:
@@ -132,6 +171,8 @@ class Bridge:
    if self.session and self.session.linked:
     self.missing_since=None;self.recovery_attempts=0;self.recovery_next=0;continue
    now=self.loop.time()
+   if self.tv_is_on is False:
+    self.missing_since=None;self.recovery_attempts=0;self.recovery_next=0;continue
    if self.handshake_started is not None:
     elapsed=now-self.handshake_started
     if elapsed<60:continue
@@ -151,12 +192,12 @@ class Bridge:
      L.error("Sony control recovery stopped after two attempts; manual Reconnect Control is available")
     continue
    self.recovery_attempts+=1;L.warning("Automatic Sony control recovery attempt %d/2",self.recovery_attempts)
-   await self.reconnect_control("automatic recovery");self.recovery_next=self.loop.time()+90
+   await self.request_reconnect("automatic recovery");self.recovery_next=self.loop.time()+90
  async def command(self,key,value):
   if key=="reconnect_control":
    if self.reconnect_control:
     self.recovery_warned=False;self.state("recovery_problem","OFF");self.notify(False)
-    self.recovery_attempts=0;self.missing_since=self.loop.time();await self.reconnect_control("manual button")
+    self.recovery_attempts=0;self.missing_since=self.loop.time();await self.request_reconnect("manual button")
    else:L.error("Bluetooth reconnect handler is not ready")
    return
   if not self.session or not self.session.linked:L.warning("Ignored %s while control link offline",key);return
@@ -188,7 +229,7 @@ class Session:
  def __init__(self,fd,bridge):
   self.fd=fd;self.bridge=bridge;self.parser=Parser();self.q=asyncio.Queue();self.ready=asyncio.Event()
   self.ready.set();self.volume_reply=asyncio.Event();self.subwoofer_reply=asyncio.Event();self.seq=0;self.started=False;self.linked=False;self.closed=False
-  self.subwoofer_direction=1;self.pending_input=None
+  self.subwoofer_direction=1;self.pending_input=None;self.activation_sent=False
  async def send(self,payload,label,wait_ack=False):
   result=self.bridge.loop.create_future() if wait_ack else None
   await self.q.put((payload,label,result))
@@ -228,6 +269,11 @@ class Session:
    self.volume_reply.clear();await self.send(bytes((0x91,1)),"control heartbeat")
    try:await asyncio.wait_for(self.volume_reply.wait(),10)
    except asyncio.TimeoutError:self.fail("no volume status response to control heartbeat");return
+ async def activate_control(self,volume):
+  try:
+   await self.send(bytes((0x93,1,2,volume)),"initialize control with current volume",wait_ack=True)
+   L.info("Sony control activation write acknowledged at unchanged volume=%d",volume)
+  except (OSError,ConnectionError) as exc:L.warning("Sony control activation write failed: %s",exc)
  async def queries(self):
   await self.send(bytes((0x91,1)),"query volume");await self.send(bytes((0x91,0x20,3,0x0F,0xFF,0)),"query subwoofer")
   await self.send(bytes((0x91,0x20,1,0x0F,0xFF,0)),"query night");await self.send(bytes((0x35,0)),"query input")
@@ -238,7 +284,10 @@ class Session:
    typ=payload[1]
    if typ==1:
     self.bridge.state("volume",payload[2])
-    if op==0x92:self.volume_reply.set()
+    if op==0x92:
+     self.volume_reply.set()
+     if self.linked and not self.activation_sent:
+      self.activation_sent=True;self.bridge.loop.create_task(self.activate_control(payload[2]))
    elif typ==0x12 and len(payload)>=6:
     for pos in range(3,min(len(payload)-2,3+payload[2]*3),3):
      cat=(payload[pos]<<8)|payload[pos+1]
@@ -280,8 +329,8 @@ class Session:
     try:os.close(self.fd)
     except OSError:pass
 async def main():
- mac=json.loads(Path("/data/options.json").read_text()).get("device_mac","AA:BB:CC:DD:EE:FF").upper()
- bridge=Bridge(asyncio.get_running_loop(),mac);bridge.start()
+ options=json.loads(Path("/data/options.json").read_text());mac=options.get("device_mac","AA:BB:CC:DD:EE:FF").upper();tv_entity_id=options.get("tv_entity_id","").strip()
+ bridge=Bridge(asyncio.get_running_loop(),mac,tv_entity_id);bridge.start()
  bus=await MessageBus(bus_type=BusType.SYSTEM,negotiate_unix_fd=True).connect()
  intro=await bus.introspect("org.bluez","/org/bluez")
  pm=bus.get_proxy_object("org.bluez","/org/bluez",intro).get_interface("org.bluez.ProfileManager1")
@@ -347,7 +396,7 @@ async def main():
   else:L.error("Reconnect Control: Bluetooth Audio Manager did not reconnect within 90 seconds")
   return False
  bridge.reconnect_control=reconnect_control;bridge.device_connected=device_connected
- asyncio.create_task(bridge.recovery_watchdog())
+ asyncio.create_task(bridge.recovery_watchdog());asyncio.create_task(bridge.tv_watchdog())
  L.info("Listening on RFCOMM channel 11 for %s",mac)
  while True:
   await Session(await queue.get(),bridge).run();L.info("Waiting for soundbar to reconnect")
