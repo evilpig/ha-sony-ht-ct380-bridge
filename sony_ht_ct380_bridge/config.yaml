@@ -1,11 +1,10 @@
 name: "Sony HT-CT380 Bridge"
-version: "0.5.15"
+version: "0.5.16"
 slug: "sony_ht_ct380_bridge"
-description: "Experimental Bluetooth control bridge for the Sony HT-CT380"
-url: "https://github.com/evilpig/ha-sony-ht-ct380-bridge"
+description: "Local Bluetooth control bridge for the Sony HT-CT380"
+url: "https://github.com/openai/codex"
 arch:
   - amd64
-  - aarch64
 init: false
 startup: services
 boot: auto

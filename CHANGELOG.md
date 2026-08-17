@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.16 - 2026-08-16
+
+- Publish subwoofer state only after a successful Sony transport acknowledgement
+- Stop treating the constant hexadecimal 0x04 field in the subwoofer query response as its level
+- Preserve the last successfully acknowledged subwoofer value in MQTT
+
+
 ## 0.5.15 - 2026-08-16
 
 Initial public release candidate.

@@ -25,4 +25,6 @@ The soundbar can be temperamental. Manual unpairing and re-pairing through Bluet
 
 The bridge publishes MQTT Discovery entities for volume, subwoofer, Night Mode, sound mode, inputs, control status, recovery, and manual reconnect. A read-only status heartbeat runs every 10 seconds. Recovery is bounded and stops with a warning after two failed cycles.
 
+For the tested HT-CT380 setup, enable Bluetooth Audio Manager **Stay Awake** and set **Reconnect Interval** to **10 seconds** instead of 30 seconds to reduce recovery delays.
+
 See the [full repository documentation](https://github.com/evilpig/ha-sony-ht-ct380-bridge) for installation, troubleshooting, protocol details, the AI-assisted reverse-engineering disclosure, and the optional media player package.

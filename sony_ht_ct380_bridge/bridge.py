@@ -78,7 +78,7 @@ class Bridge:
   if reason!=0:L.warning("MQTT disconnected: %s",reason)
  def discover(self):
   dev={"identifiers":["sony_ht_ct380_tandem"],"name":"Sony HT-CT380","manufacturer":"Sony","model":"HT-CT380","sw_version":"2.033","connections":[["mac",self.mac]]}
-  common={"availability_topic":AVAIL,"payload_available":"online","payload_not_available":"offline","device":dev,"origin":{"name":"Sony HT-CT380 bridge","sw_version":"0.5.15"}}
+  common={"availability_topic":AVAIL,"payload_available":"online","payload_not_available":"offline","device":dev,"origin":{"name":"Sony HT-CT380 bridge","sw_version":"0.5.16"}}
   entities=[
    ("number","volume",{"name":"Volume","unique_id":"sony_ht_ct380_volume","command_topic":BASE+"/volume/set","state_topic":BASE+"/volume/state","min":0,"max":50,"step":1,"mode":"slider","icon":"mdi:volume-high"}),
    ("sensor","normalized_volume",{"name":"Normalized Volume","unique_id":"sony_ht_ct380_normalized_volume","state_topic":BASE+"/volume/state","value_template":"{{ value | float / 50 }}","entity_category":"diagnostic","icon":"mdi:volume-medium"}),
@@ -160,14 +160,14 @@ class Bridge:
    else:L.error("Bluetooth reconnect handler is not ready")
    return
   if not self.session or not self.session.linked:L.warning("Ignored %s while control link offline",key);return
-  confirm=None
+  confirm=None;publish_after_ack=None
   try:
    if key=="volume":
     n=max(0,min(50,round(float(value))));payload=bytes((0x93,1,2,n));value=str(n)
    elif key=="subwoofer":
     n=max(0,min(12,round(float(value))));payload=bytes((0x93,0x20,3,0x0F,0xFF,1,1,n));value=str(n)
     self.session.subwoofer_direction=1
-    confirm=bytes((0x91,0x20,3,0x0F,0xFF,0))
+    publish_after_ack=("subwoofer",value)
    elif key=="night_mode":
     on=value.upper() in ("ON","1","TRUE");payload=bytes((0x93,0x20,1,0x0F,0xFF,1,1,int(on)));value="ON" if on else "OFF"
     confirm=bytes((0x91,0x20,1,0x0F,0xFF,0))
@@ -179,7 +179,8 @@ class Bridge:
    else:return
   except (KeyError,ValueError):L.warning("Invalid %s=%r",key,value);return
   L.info("HA command %s=%s payload=%s",key,value,payload.hex(" ").upper())
-  await self.session.send(payload,"set "+key)
+  await self.session.send(payload,"set "+key,wait_ack=bool(publish_after_ack))
+  if publish_after_ack:self.state(*publish_after_ack)
   if confirm:
    await asyncio.sleep(.75)
    await self.session.send(confirm,"confirm "+key)
@@ -188,7 +189,10 @@ class Session:
   self.fd=fd;self.bridge=bridge;self.parser=Parser();self.q=asyncio.Queue();self.ready=asyncio.Event()
   self.ready.set();self.volume_reply=asyncio.Event();self.subwoofer_reply=asyncio.Event();self.seq=0;self.started=False;self.linked=False;self.closed=False
   self.subwoofer_direction=1;self.pending_input=None
- async def send(self,payload,label):await self.q.put((payload,label))
+ async def send(self,payload,label,wait_ack=False):
+  result=self.bridge.loop.create_future() if wait_ack else None
+  await self.q.put((payload,label,result))
+  if result:return await result
  def fail(self,reason):
   if self.closed:return
   self.closed=True;L.error("Sony control session is stale: %s",reason)
@@ -199,19 +203,22 @@ class Session:
   except OSError:pass
  async def writer(self):
   while True:
-   payload,label=await self.q.get();await self.ready.wait();self.ready.clear()
+   payload,label,result=await self.q.get();await self.ready.wait();self.ready.clear()
    for attempt in range(1,4):
     await asyncio.to_thread(os.write,self.fd,frame(0,self.seq,payload))
     L.info("TX %s seq=%d %s%s",label,self.seq,payload.hex(" ").upper(),"" if attempt==1 else " retry="+str(attempt))
     try:
      ack_timeout=5.0 if not self.linked else 2.0
-     await asyncio.wait_for(self.ready.wait(),ack_timeout);break
+     await asyncio.wait_for(self.ready.wait(),ack_timeout)
+     if result and not result.done():result.set_result(True)
+     break
     except asyncio.TimeoutError:
      L.warning("No Sony ACK for %s (attempt %d/3)",label,attempt)
      if attempt<3:
       self.seq^=1
       L.info("Retrying %s with alternate Sony sequence seq=%d",label,self.seq)
    else:
+    if result and not result.done():result.set_exception(ConnectionError("no Sony ACK for "+label))
     self.fail("3 missing ACKs for "+label);return
  async def heartbeat(self):
   first=True
@@ -238,9 +245,7 @@ class Session:
      if cat in MODE_IDS:self.bridge.state("sound_mode",MODE_IDS[cat]);break
    elif typ==0x20 and op==0x92 and len(payload)>=6:
     if payload[2]==1:self.bridge.state("night_mode","ON" if payload[-1] else "OFF")
-    elif payload[2]==3:
-     self.bridge.state("subwoofer",payload[-3])
-     self.subwoofer_reply.set()
+    elif payload[2]==3:self.subwoofer_reply.set()
   elif op in (0x31,0x36) and len(payload)>=2:
    if payload[1]==0x00:self.bridge.state("input","BT Audio")
    elif payload[1]==0x17:self.bridge.state("input","TV")

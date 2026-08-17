@@ -74,6 +74,8 @@ The HT-CT380 can be temperamental during pairing:
 
 Bluetooth Audio Manager's **Stay Awake** option can help keep the A2DP connection alive, but it does not keep the proprietary Sony control session alive by itself. The bridge independently checks that session using a read-only volume query.
 
+For this soundbar, enable **Stay Awake** in Bluetooth Audio Manager and change its **Reconnect Interval** from the default 30 seconds to **10 seconds**. This does not eliminate Sony control-session timeouts, but it substantially shortens recovery and testing cycles when Bluetooth has to be re-established.
+
 ## Protocol and limitations
 
 The soundbar initiates an RFCOMM connection to server channel 11 using UUID `91819D50-5D72-4478-A001-29EB2C763568`. See [docs/PROTOCOL.md](docs/PROTOCOL.md) for verified frames and commands.
